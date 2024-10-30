@@ -26,7 +26,7 @@ public static class TestFileGenerator
         {
             foreach (var randomString in stringRandom.NextStrings(AllowedChars, 15, MaxStringLength, stringsBatchSize))
             {
-                var line = $"{numberRandom.NextInt64()}. {randomString}";
+                var line = $"{numberRandom.Next()}. {randomString}";
                 
                 totalBytes += Encoding.ASCII.GetByteCount(line);
                 if (totalBytes > maxSizeBytes)

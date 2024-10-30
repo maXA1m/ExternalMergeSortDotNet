@@ -1,16 +1,15 @@
 using LargeFileSort.Entities;
 using LargeFileSort.Mergers;
-using LargeFileSort.Parsers;
 using LargeFileSort.Preparators;
-using LargeFileSort.Sorters;
+using LargeFileSort.Sorts;
 using TestFileGeneratorTool;
 
 namespace Tests;
 
-public class ExternalMergeFileSorterTests
+public class ExternalMergeFileSortTests
 {
     [Test]
-    public void ExternalMergeForExampleFromTask()
+    public void TwoWayRecursiveMerger_SimpleExampleFromTask()
     {
         // Arrange
         var lines = new List<string>
@@ -31,14 +30,12 @@ public class ExternalMergeFileSorterTests
             "30432. Something something something"
         };
         
-        var parser = new KeyValueFileLineParser();
-        var merger = new RecursiveMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser);
+        var merger = new TwoWayRecursiveMerger<KeyValueFileLine>();
+        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(KeyValueFileLine.AverageSizeBytes);
         
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
+        var sorter = new ExternalMergeFileSort<KeyValueFileLine>(merger, preparator);
         
         var folder = Directory.GetCurrentDirectory();
-        var tempPath = Path.Combine(folder, "temp");
         var filePath = Path.Combine(folder, $"unsorted_{Guid.NewGuid():N}.txt");
         var expectedFilePath = Path.Combine(folder, "expected.txt");
         
@@ -55,11 +52,10 @@ public class ExternalMergeFileSorterTests
         File.Delete(result);
         File.Delete(filePath);
         File.Delete(expectedFilePath);
-        Directory.Delete(tempPath, true);
     }
     
     [Test]
-    public void ExternalMergeForExampleFromTaskWithDuplicates()
+    public void TwoWayRecursiveMerger_SimpleExampleFromTask_WithDuplicates()
     {
         // Arrange
         var lines = new List<string>
@@ -88,14 +84,12 @@ public class ExternalMergeFileSorterTests
             "30432. Something something something"
         };
         
-        var parser = new KeyValueFileLineParser();
-        var merger = new RecursiveMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser);
+        var merger = new TwoWayRecursiveMerger<KeyValueFileLine>();
+        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(KeyValueFileLine.AverageSizeBytes);
         
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
+        var sorter = new ExternalMergeFileSort<KeyValueFileLine>(merger, preparator);
         
         var folder = Directory.GetCurrentDirectory();
-        var tempPath = Path.Combine(folder, "temp");
         var filePath = Path.Combine(folder, $"unsorted_{Guid.NewGuid():N}.txt");
         var expectedFilePath = Path.Combine(folder, "expected.txt");
         
@@ -112,23 +106,28 @@ public class ExternalMergeFileSorterTests
         File.Delete(result);
         File.Delete(filePath);
         File.Delete(expectedFilePath);
-        Directory.Delete(tempPath, true);
     }
     
     [Test]
-    public void GenerateAndSort1GbOfData()
+    [TestCase(1000, null)]
+    [TestCase(1000, 100 * 1000000)]
+    [TestCase(10000, null)]
+    [TestCase(10000, 100 * 1000000)]
+    [TestCase(10000, 500 * 1000000)]
+    [TestCase(10000, 1000 * 1000000)]
+    public void TwoWayRecursiveMerger_GenerateAndSortData(int unsortedFileSizeMb, long? chunkSizeBytes)
     {
         // Arrange
-        var parser = new KeyValueFileLineParser();
-        var merger = new RecursiveMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser);
+        var merger = new TwoWayRecursiveMerger<KeyValueFileLine>();
+        var preparator =
+            new FixedSizeChunkPreparator<KeyValueFileLine>(KeyValueFileLine.AverageSizeBytes, chunkSizeBytes);
         
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
+        var sorter = new ExternalMergeFileSort<KeyValueFileLine>(merger, preparator);
         
         var folder = Directory.GetCurrentDirectory();
         var filePath = Path.Combine(folder, $"unsorted_{Guid.NewGuid():N}.txt");
         
-        TestFileGenerator.GenerateRandom(filePath, 1000);
+        TestFileGenerator.GenerateRandom(filePath, unsortedFileSizeMb);
         
         // Act
         var result = sorter.SortAndSave(filePath);
@@ -142,71 +141,25 @@ public class ExternalMergeFileSorterTests
     }
     
     [Test]
-    public void GenerateAndSort1GbOfDataWithHeapMerger()
+    [TestCase(1000, null)]
+    [TestCase(1000, 100 * 1000000)]
+    [TestCase(10000, null)]
+    [TestCase(10000, 100 * 1000000)]
+    [TestCase(10000, 500 * 1000000)]
+    [TestCase(10000, 1000 * 1000000)]
+    public void HeapMerger_GenerateAndSortData(int unsortedFileSizeMb, long? chunkSizeBytes)
     {
         // Arrange
-        var parser = new KeyValueFileLineParser();
-        var merger = new HeapMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser);
+        var merger = new HeapMerger<KeyValueFileLine>();
+        var preparator =
+            new FixedSizeChunkPreparator<KeyValueFileLine>(KeyValueFileLine.AverageSizeBytes, chunkSizeBytes);
         
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
+        var sorter = new ExternalMergeFileSort<KeyValueFileLine>(merger, preparator);
         
         var folder = Directory.GetCurrentDirectory();
         var filePath = Path.Combine(folder, $"unsorted_{Guid.NewGuid():N}.txt");
         
-        TestFileGenerator.GenerateRandom(filePath, 1000);
-        
-        // Act
-        var result = sorter.SortAndSave(filePath);
-        
-        // Assert
-        Assert.That(new FileInfo(filePath).Length, Is.EqualTo(new FileInfo(result).Length));
-        
-        // Cleanup
-        File.Delete(result);
-        File.Delete(filePath);
-    }
-    
-    [Test]
-    public void GenerateAndSort1GbOfDataWith100MbChunkSize()
-    {
-        // Arrange
-        var parser = new KeyValueFileLineParser();
-        var merger = new RecursiveMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser, 100 * 1000000);
-        
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
-        
-        var folder = Directory.GetCurrentDirectory();
-        var filePath = Path.Combine(folder, $"unsorted_{Guid.NewGuid():N}.txt");
-        
-        TestFileGenerator.GenerateRandom(filePath, 1000);
-        
-        // Act
-        var result = sorter.SortAndSave(filePath);
-        
-        // Assert
-        Assert.That(new FileInfo(filePath).Length, Is.EqualTo(new FileInfo(result).Length));
-        
-        // Cleanup
-        File.Delete(result);
-        File.Delete(filePath);
-    }
-    
-    [Test]
-    public void GenerateAndSort1GbOfDataWithHeapMergerAnd100MbChunkSize()
-    {
-        // Arrange
-        var parser = new KeyValueFileLineParser();
-        var merger = new HeapMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser, 100 * 1000000);
-        
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
-        
-        var folder = Directory.GetCurrentDirectory();
-        var filePath = Path.Combine(folder, $"unsorted_{Guid.NewGuid():N}.txt");
-        
-        TestFileGenerator.GenerateRandom(filePath, 1000);
+        TestFileGenerator.GenerateRandom(filePath, unsortedFileSizeMb);
         
         // Act
         var result = sorter.SortAndSave(filePath);
@@ -220,14 +173,13 @@ public class ExternalMergeFileSorterTests
     }
     
     //[Test]
-    public void GenerateAndSort1GbOfDataWithHeapMergerMoreThan16384Chunks_ShouldFail()
+    public void HeapMerger_GenerateAndSort1GbOfData_WithMoreThan16384Chunks_ShouldFail()
     {
         // Arrange
-        var parser = new KeyValueFileLineParser();
-        var merger = new HeapMerger<KeyValueFileLine>(parser);
-        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(parser, 50000);
+        var merger = new HeapMerger<KeyValueFileLine>();
+        var preparator = new FixedSizeChunkPreparator<KeyValueFileLine>(KeyValueFileLine.AverageSizeBytes, 50000);
         
-        var sorter = new ExternalMergeFileSorter<KeyValueFileLine>(merger, preparator);
+        var sorter = new ExternalMergeFileSort<KeyValueFileLine>(merger, preparator);
         
         var folder = Directory.GetCurrentDirectory();
         var tempPath = Path.Combine(folder, "temp");

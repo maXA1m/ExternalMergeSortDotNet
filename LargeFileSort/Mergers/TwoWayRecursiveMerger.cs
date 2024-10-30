@@ -1,24 +1,17 @@
+using System.Text;
 using LargeFileSort.Entities;
 using LargeFileSort.Mergers.Abstract;
-using LargeFileSort.Parsers.Abstract;
 
 namespace LargeFileSort.Mergers;
 
-public class RecursiveMerger<T> : IMerger<T> where T : IFileLine
+public class TwoWayRecursiveMerger<T> : IMerger<T> where T : IFileLine, new()
 {
-    private readonly IFileLineParser<T> _parser;
-    
-    public RecursiveMerger(IFileLineParser<T> parser)
-    {
-        _parser = parser ?? throw new ArgumentNullException(nameof(parser));
-    }
-    
     public string MergeChunks(List<string> chunks, string tempFolder)
     {
         return Merge(chunks, tempFolder, 0, chunks.Count - 1);
     }
     
-    private string Merge(IReadOnlyList<string> chunks, string tempFolder, int left, int right)
+    private static string Merge(IReadOnlyList<string> chunks, string tempFolder, int left, int right)
     {
         if (left >= right)
         {
@@ -31,54 +24,40 @@ public class RecursiveMerger<T> : IMerger<T> where T : IFileLine
 
         var newChunkPath = Path.Combine(tempFolder, $"chunk_{Guid.NewGuid():N}.txt");
         
-        var writeStream = File.OpenWrite(newChunkPath);
-        var writer = new StreamWriter(writeStream);
-        
-        var leftChunkStream = File.OpenRead(leftChunk);
-        var leftChunkReader = new StreamReader(leftChunkStream);
-        
-        var rightChunkStream = File.OpenRead(rightChunk);
-        var rightChunkReader = new StreamReader(rightChunkStream);
-
+        var writer = new StreamWriter(newChunkPath, false, Encoding.ASCII);
+        var leftChunkReader = new StreamReader(leftChunk, Encoding.ASCII, true);
+        var rightChunkReader = new StreamReader(rightChunk, Encoding.ASCII, true);
         try
         {
             var leftLine = leftChunkReader.ReadLine();
             var rightLine = rightChunkReader.ReadLine();
-
-            var leftFileLine = _parser.Parse(leftLine);
-            var rightFileLine = _parser.Parse(rightLine);
-            while (leftFileLine is not null && rightFileLine is not null)
+            while (!string.IsNullOrEmpty(leftLine) && !string.IsNullOrEmpty(rightLine))
             {
+                var leftFileLine = new T { OriginalLine = leftLine };
+                var rightFileLine = new T { OriginalLine = rightLine };
+                
                 if (leftFileLine.CompareTo(rightFileLine) <= 0)
                 {
                     writer.WriteLine(leftLine);
-
                     leftLine = leftChunkReader.ReadLine();
-                    leftFileLine = _parser.Parse(leftLine);
                 }
                 else
                 {
                     writer.WriteLine(rightLine);
-
                     rightLine = rightChunkReader.ReadLine();
-                    rightFileLine = _parser.Parse(rightLine);
                 }
             }
 
-            while (leftFileLine is not null)
+            while (!string.IsNullOrEmpty(leftLine))
             {
                 writer.WriteLine(leftLine);
-
                 leftLine = leftChunkReader.ReadLine();
-                leftFileLine = _parser.Parse(leftLine);
             }
 
-            while (rightFileLine is not null)
+            while (!string.IsNullOrEmpty(rightLine))
             {
                 writer.WriteLine(rightLine);
-
                 rightLine = rightChunkReader.ReadLine();
-                rightFileLine = _parser.Parse(rightLine);
             }
         }
         finally

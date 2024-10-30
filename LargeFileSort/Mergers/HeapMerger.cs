@@ -1,52 +1,41 @@
+using System.Text;
 using LargeFileSort.Entities;
 using LargeFileSort.Mergers.Abstract;
-using LargeFileSort.Parsers.Abstract;
 
 namespace LargeFileSort.Mergers;
 
-public class HeapMerger<T> : IMerger<T> where T : IFileLine
+public class HeapMerger<T> : IMerger<T> where T : IFileLine, new()
 {
-    private readonly IFileLineParser<T> _parser;
-    
-    public HeapMerger(IFileLineParser<T> parser)
-    {
-        _parser = parser ?? throw new ArgumentNullException(nameof(parser));
-    }
-
     public string MergeChunks(List<string> chunks, string tempFolder)
     {
         // Save streams to use and dispose later
-        var streams = new List<(FileStream Stream, StreamReader Reader)>();
+        var readers = new List<(string ChunkName, StreamReader Reader)>();
         try
         {
             // The upper limit on files opened by .NET is governed by the limit imposed on the Win32 API CreateFile, which is 16384
-            foreach (var chunkPath in chunks)
-            {
-                var chunkStream = File.OpenRead(chunkPath);
-                var chunkReader = new StreamReader(chunkStream);
-
-                streams.Add((chunkStream, chunkReader));
-            }
+            readers.AddRange(
+                chunks.Select(chunkPath => (chunkPath, new StreamReader(chunkPath, Encoding.ASCII, true))));
 
             // Initialise heap
-            var queue = new PriorityQueue<StreamReader, T>();
-            foreach (var stream in streams)
+            var queue = new PriorityQueue<(string ChunkName, StreamReader Reader), T>(readers.Count);
+            foreach (var reader in readers)
             {
-                var line = stream.Reader.ReadLine();
-                if (!_parser.TryParse(line, out var fileLine))
+                var line = reader.Reader.ReadLine();
+                if (string.IsNullOrEmpty(line))
                 {
                     throw new InvalidDataException();
                 }
 
-                queue.Enqueue(stream.Reader, fileLine);
+                queue.Enqueue(reader, new T
+                {
+                    OriginalLine = line
+                });
             }
 
             var finalChunkPath = Path.Combine(tempFolder, $"chunk_{Guid.NewGuid().ToString()}.txt");
             
-            using var writeStream = File.OpenWrite(finalChunkPath);
-            using var writer = new StreamWriter(writeStream);
-
             // Merge k sorted chunks into one
+            using var writer = new StreamWriter(finalChunkPath, false, Encoding.ASCII);
             while (queue.Count > 0)
             {
                 var count = queue.Count;
@@ -57,15 +46,29 @@ public class HeapMerger<T> : IMerger<T> where T : IFileLine
                         continue;
                     }
 
-                    writer.WriteLine(fileLine.ToString());
+                    writer.WriteLine(fileLine.OriginalLine);
 
-                    var line = reader.ReadLine();
-                    if (!_parser.TryParse(line, out fileLine))
+                    var line = reader.Reader.ReadLine();
+                    if (string.IsNullOrEmpty(line))
                     {
+                        // Delete merged file
+                        try
+                        {
+                            reader.Reader.Close();
+                            File.Delete(reader.ChunkName);
+                        }
+                        catch
+                        {
+                            // Ignored to do not fail sorting
+                        }
+
                         continue;
                     }
 
-                    queue.Enqueue(reader, fileLine);
+                    queue.Enqueue(reader, new T
+                    {
+                        OriginalLine = line
+                    });
                 }
             }
 
@@ -74,9 +77,9 @@ public class HeapMerger<T> : IMerger<T> where T : IFileLine
         finally
         {
             // Dispose chunk readers
-            foreach (var stream in streams)
+            foreach (var (_, reader) in readers)
             {
-                stream.Reader.Dispose();
+                reader.Dispose();
             }
         }
     }
