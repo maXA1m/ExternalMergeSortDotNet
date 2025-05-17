@@ -3,7 +3,7 @@ External Merge Sort implementation for C# .NET with Tests.
 
 Implements both `two-way recursive merge` and `k-way heap merge`.
 
-# Task
+# Example
 The input is a large text file, where each line is a `Number. String`.
 
 For example:
